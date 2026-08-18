@@ -43,6 +43,27 @@ public sealed class DashboardEndpointAuthorizationTests(AnalyticsApiFactory fact
     }
 
     [Fact]
+    public async Task Product_performance_endpoint_also_requires_the_analytics_dashboards_read_scope()
+    {
+        // Mirrors the three revenue-endpoint checks above, for the 11th dashboard endpoint
+        // (added this pass) — confirms it sits in the same MapGroup(...).RequireAuthorization(...)
+        // as every other dashboard, not a separately-configured route.
+        var client = factory.CreateClient();
+
+        var unauthorized = await client.GetAsync("/internal/v1/dashboards/product-performance?from=2026-01-01T00:00:00Z&to=2026-01-02T00:00:00Z&metric=revenue");
+        unauthorized.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        client.DefaultRequestHeaders.Add("X-Test-Scopes", "some.other.scope");
+        var forbidden = await client.GetAsync("/internal/v1/dashboards/product-performance?from=2026-01-01T00:00:00Z&to=2026-01-02T00:00:00Z&metric=revenue");
+        forbidden.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        client.DefaultRequestHeaders.Remove("X-Test-Scopes");
+        client.DefaultRequestHeaders.Add("X-Test-Scopes", "analytics.dashboards.read");
+        var ok = await client.GetAsync("/internal/v1/dashboards/product-performance?from=2026-01-01T00:00:00Z&to=2026-01-02T00:00:00Z&metric=revenue");
+        ok.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
     public async Task Health_live_and_ready_endpoints_are_reachable_without_auth()
     {
         var client = factory.CreateClient();
