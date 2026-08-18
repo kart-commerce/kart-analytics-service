@@ -5,6 +5,7 @@ using Kart.Analytics.Application.Features.GetFulfillmentPerformanceDashboard;
 using Kart.Analytics.Application.Features.GetInventoryMovementDashboard;
 using Kart.Analytics.Application.Features.GetNotificationDeliveryDashboard;
 using Kart.Analytics.Application.Features.GetOrderConversionFunnel;
+using Kart.Analytics.Application.Features.GetProductPerformanceDashboard;
 using Kart.Analytics.Application.Features.GetPromotionsEffectivenessDashboard;
 using Kart.Analytics.Application.Features.GetReviewsRatingsDashboard;
 using Kart.Analytics.Application.Features.GetRevenueDashboard;
@@ -14,9 +15,10 @@ using MediatR;
 namespace Kart.Analytics.Api.Endpoints;
 
 /// <summary>
-/// api-contract.yaml's ten `/internal/v1/{dashboards,funnels}/*` endpoints — every one GET-only,
-/// gated by the `analytics.dashboards.read` scope policy (Program.cs), never routed through the
-/// public API Gateway (requirement-spec.md §1).
+/// api-contract.yaml's eleven `/internal/v1/{dashboards,funnels}/*` endpoints (ten original plus
+/// `product-performance`, added this pass) — every one GET-only, gated by the
+/// `analytics.dashboards.read` scope policy (Program.cs), never routed through the public API
+/// Gateway (requirement-spec.md §1).
 /// </summary>
 public static class DashboardEndpoints
 {
@@ -84,6 +86,15 @@ public static class DashboardEndpoints
         {
             var result = await sender.Send(new GetNotificationDeliveryDashboardQuery(from, to, granularity, channel));
             return Results.Ok(new { result.Envelope.GeneratedAt, result.Envelope.IsProvisional, result.Envelope.ReconciledThrough, byChannel = result.ByChannel });
+        });
+
+        // Added this pass (11th endpoint) — genai-business-assistant-spec.md §10.3 /
+        // database-design.md "product_performance_dashboard". No `granularity` query parameter,
+        // unlike every dashboard above (see GetProductPerformanceDashboardQueryHandler's remarks).
+        group.MapGet("/dashboards/product-performance", async (ISender sender, DateTimeOffset from, DateTimeOffset to, string metric, string? category, string direction = "desc", int limit = 10) =>
+        {
+            var result = await sender.Send(new GetProductPerformanceDashboardQuery(from, to, metric, category, direction, limit));
+            return Results.Ok(new { result.Envelope.GeneratedAt, result.Envelope.IsProvisional, result.Envelope.ReconciledThrough, products = result.Products });
         });
     }
 }
