@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Application\Kart.Analytics.Application.csproj" />
+    <ProjectReference Include="..\Domain\Kart.Analytics.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.11" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.11">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="8.0.0" />
+    <PackageReference Include="MongoDB.Driver" Version="2.28.0" />
+    <!-- design-decisions.md's ingestion transport decision (Kafka-only, no RabbitMQ ownership) -
+         no Kart.Shared.* package exists for Kafka (Kart.Shared.Messaging is RabbitMQ-only, per
+         kart-recommendation-service's own precedent), so consumed directly via Confluent.Kafka. -->
+    <PackageReference Include="Confluent.Kafka" Version="2.5.3" />
+    <PackageReference Include="Kart.Shared.Auditing" Version="0.1.0" />
+    <!-- JWKS fetch/validation for the internal OAuth2 Client Credentials bearer scheme
+         (api-contract.yaml security scheme) - same JwksSigningKeyResolver pattern as
+         kart-recommendation-service/kart-wishlist-service. Both pinned to the SAME exact version:
+         a documented past runtime MissingMethodException came from letting these two float
+         independently (they're released in lockstep upstream). -->
+    <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.0.2" />
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Needed for BackgroundService (Kafka consumer / scheduled jobs) and IHttpClientFactory (JWKS fetch). -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

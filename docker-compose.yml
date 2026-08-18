@@ -1,0 +1,120 @@
+name: kart-analytics-service
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: kart-analytics-postgres
+    environment:
+      POSTGRES_DB: kart_analytics
+      POSTGRES_USER: kart_analytics_service
+      POSTGRES_PASSWORD: changeme
+    ports:
+      - "${ANALYTICS_POSTGRES_PORT:-5452}:5432"
+    volumes:
+      - kart-analytics-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kart_analytics_service -d kart_analytics"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # --- MongoDB sharded cluster (database-design.md + confirmed build decision: real sharded
+  # topology, sharded on {granularity, bucketStart} — the key database-design.md itself names as
+  # the revisit trigger). Minimal-but-real topology for local dev/verification: one config-server
+  # replset member, two shard replset members (each a single-node replset — valid for dev, not
+  # HA), one mongos router. scripts/init-mongo-cluster.sh performs rs.initiate/sh.addShard/
+  # sh.enableSharding/sh.shardCollection once all nodes are up — same pattern as
+  # kart-product-service's own cluster. ---
+  mongo-configsvr:
+    image: mongo:7.0
+    container_name: kart-analytics-mongo-configsvr
+    command: ["mongod", "--configsvr", "--replSet", "analyticsCfgRS", "--port", "27019", "--bind_ip_all"]
+    volumes:
+      - kart-analytics-mongo-configsvr-data:/data/db
+
+  mongo-shard1:
+    image: mongo:7.0
+    container_name: kart-analytics-mongo-shard1
+    command: ["mongod", "--shardsvr", "--replSet", "analyticsShard1RS", "--port", "27018", "--bind_ip_all"]
+    volumes:
+      - kart-analytics-mongo-shard1-data:/data/db
+
+  mongo-shard2:
+    image: mongo:7.0
+    container_name: kart-analytics-mongo-shard2
+    command: ["mongod", "--shardsvr", "--replSet", "analyticsShard2RS", "--port", "27018", "--bind_ip_all"]
+    volumes:
+      - kart-analytics-mongo-shard2-data:/data/db
+
+  mongo-router:
+    image: mongo:7.0
+    container_name: kart-analytics-mongo-router
+    depends_on:
+      - mongo-configsvr
+      - mongo-shard1
+      - mongo-shard2
+    command: ["mongos", "--configdb", "analyticsCfgRS/kart-analytics-mongo-configsvr:27019", "--bind_ip_all", "--port", "27017"]
+    ports:
+      - "${ANALYTICS_MONGO_PORT:-27217}:27017"
+
+  # Single-node KRaft mode (no Zookeeper needed) — same pattern as kart-devops's shared compose
+  # and kart-recommendation-service's own clickstream broker. Analytics is a full fan-in consumer
+  # (ADR-0004) but owns no topic of its own to publish to (message-bus-manifest.json:
+  # "transport": "kafka-only", publishes nothing).
+  kafka:
+    image: apache/kafka:3.8.0
+    container_name: kart-analytics-kafka
+    ports:
+      - "${ANALYTICS_KAFKA_PORT:-9292}:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,EXTERNAL://localhost:${ANALYTICS_KAFKA_PORT:-9292}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      CLUSTER_ID: "QW5hbHl0aWNzQ2x1c3Rlcklk"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+
+  analytics-service:
+    build:
+      context: .
+    container_name: kart-analytics-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo-router:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+    ports:
+      - "${ANALYTICS_PORT:-8097}:8080"
+    volumes:
+      # AddKartGlobalConfig() throws at boot unless GlobalConfig:Path resolves to a real file -
+      # every actual secret below is already supplied as a plain env var, so this is just an
+      # empty placeholder to satisfy that check (kart-product-service convention).
+      - ./docker-globalconfig.empty.json:/app/globalconfig.json:ro
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      GlobalConfig__Path: /app/globalconfig.json
+      ConnectionStrings__AnalyticsDb: "Host=postgres;Port=5432;Database=kart_analytics;Username=kart_analytics_service;Password=changeme"
+      Mongo__ConnectionString: "mongodb://mongo-router:27017"
+      Mongo__Database: "kart_analytics"
+      Kafka__BootstrapServers: "kafka:29092"
+      Jwt__Issuer: "kart-identity-service"
+      Jwt__JwksUri: "http://identity:8080/.well-known/jwks.json"
+
+volumes:
+  kart-analytics-postgres-data:
+  kart-analytics-mongo-configsvr-data:
+  kart-analytics-mongo-shard1-data:
+  kart-analytics-mongo-shard2-data:

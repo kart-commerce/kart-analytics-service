@@ -1,0 +1,6 @@
+{
+  "_comment": "Copy to appsettings.Local.json (gitignored) and point GlobalConfig:Path at the shared, machine-local GlobalConfig secrets file - see kart-identity-service's own appsettings.Local.json.example for the platform-wide convention this mirrors.",
+  "GlobalConfig": {
+    "Path": "/absolute/path/to/kart-internals/globalconfig-bare-metal.json"
+  }
+}
