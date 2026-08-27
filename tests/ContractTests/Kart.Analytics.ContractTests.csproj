@@ -16,6 +16,11 @@
     <PackageReference Include="Testcontainers.PostgreSql" Version="3.10.0" />
     <PackageReference Include="Testcontainers.MongoDb" Version="3.10.0" />
     <PackageReference Include="Testcontainers.Kafka" Version="3.10.0" />
+    <!-- Explicit pin overriding Testcontainers 3.10.0's vulnerable transitive SSH.NET 2023.0.0
+         (GHSA-q939-rpr3-3284, fixed 2026.0.0 - the only patched release). Bumping Testcontainers
+         itself would mean the 3.x->4.x major version jump, so pin the transitive package
+         directly instead - least invasive fix for the vulnerability scan. -->
+    <PackageReference Include="SSH.NET" Version="2026.0.0" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
