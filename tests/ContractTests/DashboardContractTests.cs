@@ -39,6 +39,7 @@ public sealed class DashboardContractTests(AnalyticsContractApiFactory factory)
     [InlineData("/internal/v1/dashboards/reviews-ratings?from=2026-01-01T00:00:00Z&to=2026-01-02T00:00:00Z&granularity=Day", "reviewCount")]
     [InlineData("/internal/v1/dashboards/admin-audit?from=2026-01-01T00:00:00Z&to=2026-01-02T00:00:00Z", "actions")]
     [InlineData("/internal/v1/dashboards/notification-delivery?from=2026-01-01T00:00:00Z&to=2026-01-02T00:00:00Z&granularity=Day", "byChannel")]
+    [InlineData("/internal/v1/dashboards/product-performance?from=2026-01-01T00:00:00Z&to=2026-01-02T00:00:00Z&metric=revenue", "products")]
     public async Task Endpoint_returns_200_with_the_DashboardEnvelope_and_its_own_declared_field(string path, string ownFieldName)
     {
         var response = await AuthorizedClient().GetAsync(path);
@@ -63,6 +64,40 @@ public sealed class DashboardContractTests(AnalyticsContractApiFactory factory)
         // don't hide" (ddd-cqrs-standards.md) requires isProvisional:true, never false.
         document.RootElement.GetProperty("isProvisional").GetBoolean().Should().BeTrue();
         document.RootElement.GetProperty("reconciledThrough").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task Product_performance_empty_database_reports_the_window_as_provisional()
+    {
+        // Added this pass — product-performance (11th dashboard, added for
+        // kart-ai-assistant-service's product-ranking capability). Mirrors
+        // Empty_database_reports_the_window_as_provisional above, for the one endpoint whose
+        // response shape (a ranked `products` array, no `granularity` query parameter) differs
+        // enough from the other ten to warrant its own dedicated assertion rather than only the
+        // generic Theory entry above.
+        var response = await AuthorizedClient().GetAsync("/internal/v1/dashboards/product-performance?from=2026-01-01T00:00:00Z&to=2026-01-02T00:00:00Z&metric=revenue");
+        var body = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(body);
+
+        document.RootElement.GetProperty("isProvisional").GetBoolean().Should().BeTrue();
+        document.RootElement.GetProperty("reconciledThrough").ValueKind.Should().Be(JsonValueKind.Null);
+        document.RootElement.GetProperty("products").GetArrayLength().Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData("metric=not_a_metric")]
+    [InlineData("metric=revenue&direction=sideways")]
+    [InlineData("metric=revenue&limit=0")]
+    [InlineData("metric=revenue&limit=101")]
+    public async Task Product_performance_rejects_invalid_query_parameters_with_400(string invalidParams)
+    {
+        // edge-cases.md "Note: `limit` Parameter Bounds — No New Edge Case" / api-contract.yaml's
+        // `metric`/`direction` enums and `limit` minimum/maximum — validated by
+        // GetProductPerformanceDashboardQueryValidator, surfaced as ProblemDetails 400 by the
+        // shared error-handling pipeline every other rejected request in this service already uses.
+        var response = await AuthorizedClient().GetAsync($"/internal/v1/dashboards/product-performance?from=2026-01-01T00:00:00Z&to=2026-01-02T00:00:00Z&{invalidParams}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [Fact]

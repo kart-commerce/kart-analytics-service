@@ -2,6 +2,7 @@ using Kart.Analytics.Application.Common.Models;
 using Kart.Analytics.Application.Features.GetAdminAuditDashboard;
 using Kart.Analytics.Application.Features.GetInventoryMovementDashboard;
 using Kart.Analytics.Application.Features.GetNotificationDeliveryDashboard;
+using Kart.Analytics.Application.Features.GetProductPerformanceDashboard;
 using Kart.Analytics.Application.Features.GetRevenueDashboard;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -58,11 +59,70 @@ public sealed class MongoIndexInitializerHostedService(MongoContext context, ILo
                     .Ascending(d => d.Granularity).Ascending(d => d.BucketStart).Ascending(d => d.Channel)),
                 cancellationToken: cancellationToken));
 
+        // Added this pass: product_performance_dashboard's own {granularity,bucketStart} index is
+        // already created by the loop above (it's included in AllCollectionNames). The ranking
+        // endpoint's `$sort`+`$limit` query additionally needs one compound index per rankable
+        // metric (database-design.md's Indexing Rationale — six compound indexes total: one
+        // category-prefixed + one category-omitted pair per metric), with `sku` ascending appended
+        // last as the deterministic tiebreak (edge-cases.md "Ranking Ties at the Limit Cutoff
+        // (product-performance)"). Declared via the strongly-typed `Builders<T>.IndexKeys` lambda
+        // form (not a hand-typed dotted string path), so each index target stays correct regardless
+        // of the underlying BSON element name.
+        await CreateProductPerformanceRankingIndexesAsync(cancellationToken);
+
         // admin_audit_log — a log query, not a bucket aggregate (no granularity param).
         await CreateIndexAsync($"{MongoContext.AdminAuditLog}.(occurredAt,actionType,adminId)", () =>
             context.Database.GetCollection<AdminAuditLogReadModel>(MongoContext.AdminAuditLog).Indexes.CreateOneAsync(
                 new CreateIndexModel<AdminAuditLogReadModel>(Builders<AdminAuditLogReadModel>.IndexKeys
                     .Ascending(d => d.OccurredAt).Ascending(d => d.ActionType).Ascending(d => d.AdminId)),
+                cancellationToken: cancellationToken));
+    }
+
+    /// <summary>
+    /// database-design.md's Indexing Rationale: "six compound indexes on
+    /// product_performance_dashboard — `{granularity:1, bucketStart:1, category:1, &lt;metric&gt;:-1,
+    /// sku:1}` and `{granularity:1, bucketStart:1, &lt;metric&gt;:-1, sku:1}`, one pair per rankable
+    /// metric ∈ {"revenue.amount", "unitsSold", "orderCount"}" — one B-tree per metric because the
+    /// endpoint's `metric` parameter selects one of three physically distinct sort orders; the
+    /// category-omitted twin serves the "all categories" case off the `(granularity, bucketStart)`
+    /// prefix alone.
+    /// </summary>
+    private async Task CreateProductPerformanceRankingIndexesAsync(CancellationToken cancellationToken)
+    {
+        await CreateIndexAsync($"{MongoContext.ProductPerformanceDashboard}.(granularity,bucketStart,category,revenueAmount desc,sku)", () =>
+            context.Database.GetCollection<ProductPerformanceReadModel>(MongoContext.ProductPerformanceDashboard).Indexes.CreateOneAsync(
+                new CreateIndexModel<ProductPerformanceReadModel>(Builders<ProductPerformanceReadModel>.IndexKeys
+                    .Ascending(d => d.Granularity).Ascending(d => d.BucketStart).Ascending(d => d.Category).Descending(d => d.RevenueAmount).Ascending(d => d.Sku)),
+                cancellationToken: cancellationToken));
+
+        await CreateIndexAsync($"{MongoContext.ProductPerformanceDashboard}.(granularity,bucketStart,revenueAmount desc,sku)", () =>
+            context.Database.GetCollection<ProductPerformanceReadModel>(MongoContext.ProductPerformanceDashboard).Indexes.CreateOneAsync(
+                new CreateIndexModel<ProductPerformanceReadModel>(Builders<ProductPerformanceReadModel>.IndexKeys
+                    .Ascending(d => d.Granularity).Ascending(d => d.BucketStart).Descending(d => d.RevenueAmount).Ascending(d => d.Sku)),
+                cancellationToken: cancellationToken));
+
+        await CreateIndexAsync($"{MongoContext.ProductPerformanceDashboard}.(granularity,bucketStart,category,unitsSold desc,sku)", () =>
+            context.Database.GetCollection<ProductPerformanceReadModel>(MongoContext.ProductPerformanceDashboard).Indexes.CreateOneAsync(
+                new CreateIndexModel<ProductPerformanceReadModel>(Builders<ProductPerformanceReadModel>.IndexKeys
+                    .Ascending(d => d.Granularity).Ascending(d => d.BucketStart).Ascending(d => d.Category).Descending(d => d.UnitsSold).Ascending(d => d.Sku)),
+                cancellationToken: cancellationToken));
+
+        await CreateIndexAsync($"{MongoContext.ProductPerformanceDashboard}.(granularity,bucketStart,unitsSold desc,sku)", () =>
+            context.Database.GetCollection<ProductPerformanceReadModel>(MongoContext.ProductPerformanceDashboard).Indexes.CreateOneAsync(
+                new CreateIndexModel<ProductPerformanceReadModel>(Builders<ProductPerformanceReadModel>.IndexKeys
+                    .Ascending(d => d.Granularity).Ascending(d => d.BucketStart).Descending(d => d.UnitsSold).Ascending(d => d.Sku)),
+                cancellationToken: cancellationToken));
+
+        await CreateIndexAsync($"{MongoContext.ProductPerformanceDashboard}.(granularity,bucketStart,category,orderCount desc,sku)", () =>
+            context.Database.GetCollection<ProductPerformanceReadModel>(MongoContext.ProductPerformanceDashboard).Indexes.CreateOneAsync(
+                new CreateIndexModel<ProductPerformanceReadModel>(Builders<ProductPerformanceReadModel>.IndexKeys
+                    .Ascending(d => d.Granularity).Ascending(d => d.BucketStart).Ascending(d => d.Category).Descending(d => d.OrderCount).Ascending(d => d.Sku)),
+                cancellationToken: cancellationToken));
+
+        await CreateIndexAsync($"{MongoContext.ProductPerformanceDashboard}.(granularity,bucketStart,orderCount desc,sku)", () =>
+            context.Database.GetCollection<ProductPerformanceReadModel>(MongoContext.ProductPerformanceDashboard).Indexes.CreateOneAsync(
+                new CreateIndexModel<ProductPerformanceReadModel>(Builders<ProductPerformanceReadModel>.IndexKeys
+                    .Ascending(d => d.Granularity).Ascending(d => d.BucketStart).Descending(d => d.OrderCount).Ascending(d => d.Sku)),
                 cancellationToken: cancellationToken));
     }
 

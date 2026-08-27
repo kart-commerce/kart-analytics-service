@@ -41,8 +41,15 @@ builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationSc
         options.MapInboundClaims = false;
         options.TokenValidationParameters = new TokenValidationParameters
         {
-            ValidateIssuer = true,
-            ValidIssuer = jwtOptions.Value.Issuer,
+            // Identity's minted access tokens carry neither `iss` nor `aud`
+            // (JwtAccessTokenGenerator.cs — the same shape kart-admin-service's/
+            // kart-api-gateway's own AuthenticationExtensions.cs already validate
+            // against with ValidateIssuer=false). This was previously `true` with
+            // ValidIssuer bound to JwtOptions.Issuer, which made every real
+            // Identity-issued token fail validation here unconditionally, since
+            // there is no `iss` claim to match against — not a scope/role gap,
+            // a bug that made this endpoint group unreachable by any real caller.
+            ValidateIssuer = false,
             ValidateAudience = false,
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true,

@@ -23,12 +23,17 @@ public sealed class MongoContext
     public const string AdminAuditLog = "admin_audit_log";
     public const string NotificationDeliveryDashboard = "notification_delivery_dashboard";
 
+    /// <summary>Added this pass — database-design.md's 11th read model, added for
+    /// `kart-ai-assistant-service`'s product-ranking capability
+    /// (genai-business-assistant-spec.md §10.3).</summary>
+    public const string ProductPerformanceDashboard = "product_performance_dashboard";
+
     /// <summary>Every collection name, for the index initializer / health check / cluster init script to iterate.</summary>
     public static readonly string[] AllCollectionNames =
     [
         OrderConversionFunnel, RevenueDashboard, FulfillmentPerformanceDashboard, InventoryMovementDashboard,
         CatalogPricingDashboard, PromotionsEffectivenessDashboard, UserGrowthDashboard, ReviewsRatingsDashboard,
-        AdminAuditLog, NotificationDeliveryDashboard,
+        AdminAuditLog, NotificationDeliveryDashboard, ProductPerformanceDashboard,
     ];
 
     public IMongoDatabase Database { get; }
